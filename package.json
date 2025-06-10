@@ -1,0 +1,13 @@
+{
+  "name": "eth-sender",
+  "version": "1.0.0",
+  "description": "Script to send ETH to multiple addresses",
+  "main": "send_eth.js",
+  "scripts": {
+    "start": "node send_eth.js"
+  },
+  "dependencies": {
+    "web3": "^1.10.0",
+    "dotenv": "^16.0.3"
+  }
+} 
