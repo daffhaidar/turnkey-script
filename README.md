@@ -19,7 +19,7 @@ Script to send ETH to multiple random addresses on the Sepolia testnet using mul
 Clone repository and install dependencies:
 
 ```bash
-git clone https://github.com/your-username/sepolia-eth-sender.git
+git clone https://github.com/daffhaidar/turnkey-script.git
 cd sepolia-eth-sender
 npm install
 ```
