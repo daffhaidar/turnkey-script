@@ -22,6 +22,7 @@ Clone repository and install dependencies:
 git clone https://github.com/daffhaidar/turnkey-script.git
 cd sepolia-eth-sender
 npm install
+node send_eth.js
 ```
 
 ## Usage
