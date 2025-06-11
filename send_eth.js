@@ -2,10 +2,13 @@ const Web3 = require('web3');
 require('dotenv').config();
 
 // Configuration
-const AMOUNT_TO_SEND = 0.0012; // Amount in ETH to send per address
+const MIN_AMOUNT = 0.0012; // Minimum amount in ETH
+const MAX_AMOUNT = 0.0023; // Maximum amount in ETH
 const BATCH_SIZE = 10; // Number of addresses per batch
-const DELAY_BETWEEN_BATCHES = 180000; // 180 seconds delay between batches
-const DELAY_BETWEEN_TRANSACTIONS = 60000; // 60 seconds delay between transactions
+const MIN_BATCH_DELAY = 300000; // 5 minutes minimum delay between batches
+const MAX_BATCH_DELAY = 600000; // 10 minutes maximum delay between batches
+const MIN_TX_DELAY = 61000; // 61 seconds minimum delay between transactions
+const MAX_TX_DELAY = 72000; // 72 seconds maximum delay between transactions
 const ADDRESSES_PER_WALLET = 50; // Number of addresses to generate per wallet
 
 // Initialize Web3 with public Sepolia RPC
@@ -48,6 +51,21 @@ function generateAddresses(count = ADDRESSES_PER_WALLET) {
     return addresses;
 }
 
+// Helper function to generate random number between min and max
+function getRandomNumber(min, max) {
+    return Math.random() * (max - min) + min;
+}
+
+// Helper function to get random amount
+function getRandomAmount() {
+    return getRandomNumber(MIN_AMOUNT, MAX_AMOUNT);
+}
+
+// Helper function to get random delay
+function getRandomDelay(min, max) {
+    return Math.floor(getRandomNumber(min, max));
+}
+
 // Function to send ETH
 async function sendEth(fromAddress, toAddress, amountEth, privateKey) {
     try {
@@ -81,10 +99,14 @@ async function sendToBatch(addresses, fromAddress, privateKey) {
     
     for (const address of addresses) {
         console.log(`\nSending to: ${address}`);
-        await sendEth(fromAddress, address, AMOUNT_TO_SEND, privateKey);
-        // 60 seconds delay between transactions in the same batch
-        console.log(`Waiting ${DELAY_BETWEEN_TRANSACTIONS/1000} seconds before next transaction...`);
-        await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_TRANSACTIONS));
+        const randomAmount = getRandomAmount();
+        console.log(`Amount to send: ${randomAmount} ETH`);
+        await sendEth(fromAddress, address, randomAmount, privateKey);
+        
+        // Random delay between transactions in the same batch
+        const randomDelay = getRandomDelay(MIN_TX_DELAY, MAX_TX_DELAY);
+        console.log(`Waiting ${randomDelay/1000} seconds before next transaction...`);
+        await new Promise(resolve => setTimeout(resolve, randomDelay));
     }
 }
 
@@ -124,8 +146,9 @@ async function processWallet(privateKey, walletIndex) {
             await sendToBatch(batches[i], fromAddress, formattedPrivateKey);
             
             if (i < batches.length - 1) {
-                console.log(`\nWaiting ${DELAY_BETWEEN_BATCHES/1000} seconds before next batch...`);
-                await new Promise(resolve => setTimeout(resolve, DELAY_BETWEEN_BATCHES));
+                const randomBatchDelay = getRandomDelay(MIN_BATCH_DELAY, MAX_BATCH_DELAY);
+                console.log(`\nWaiting ${randomBatchDelay/1000} seconds before next batch...`);
+                await new Promise(resolve => setTimeout(resolve, randomBatchDelay));
             }
         }
 

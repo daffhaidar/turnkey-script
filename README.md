@@ -6,9 +6,9 @@ Script to send ETH to multiple random addresses on the Sepolia testnet using mul
 
 * Supports unlimited number of wallets (can be 1, 10, 100, or more)
 * Each wallet will send to 50 random addresses
-* Sends 0.0012 ETH to each address
-* 180 seconds delay between batches
-* 60 seconds delay between transactions in the same batch
+* Sends random amount between 0.0012 ETH and 0.0023 ETH to each address
+* Random delay between batches (5-10 minutes)
+* Random delay between transactions (61-72 seconds)
 * 5 minutes delay between wallets
 * Checks balance of each wallet before transactions
 * Handles nonce automatically
@@ -54,9 +54,9 @@ The script will perform the following:
    - Check wallet balance
    - Generate 50 random valid Ethereum addresses
    - Split addresses into batches (10 addresses per batch)
-   - Send 0.0012 ETH to each address with delays:
-     - 60 seconds between transactions in the same batch
-     - 180 seconds between batches
+   - Send random amount (0.0012-0.0023 ETH) to each address with random delays:
+     - 61-72 seconds between transactions in the same batch
+     - 5-10 minutes between batches
    - Wait 5 minutes before processing the next wallet
 4. Display transaction hashes and confirmations for each transaction
 
@@ -68,7 +68,7 @@ The script will perform the following:
 
 * If you encounter RPC errors, the script will automatically try other RPCs
 * Make sure each wallet has enough ETH to cover all transactions plus gas fees
-* Total time needed to send to all addresses: about 2 hours 30 minutes per wallet
+* Total time needed to send to all addresses: about 2.5-3 hours per wallet (due to random delays)
 * The script will process all available wallets in the .env file sequentially
 
 ## License
