@@ -1,9 +1,12 @@
-const Web3 = require('web3');
-require('dotenv').config();
+const Web3 = require("web3");
+require("dotenv").config();
 
-// Configuration
-const MIN_AMOUNT = 0.0012; // Minimum amount in ETH
-const MAX_AMOUNT = 0.0023; // Maximum amount in ETH
+// Declare web3 variable in the global scope so it can be accessed by all functions
+let web3;
+
+// --- CONFIGURATION ---
+const MIN_AMOUNT = 0.0012; // Minimum amount in ETH to send
+const MAX_AMOUNT = 0.0023; // Maximum amount in ETH to send
 const BATCH_SIZE = 10; // Number of addresses per batch
 const MIN_BATCH_DELAY = 300000; // 5 minutes minimum delay between batches
 const MAX_BATCH_DELAY = 600000; // 10 minutes maximum delay between batches
@@ -11,206 +14,247 @@ const MIN_TX_DELAY = 61000; // 61 seconds minimum delay between transactions
 const MAX_TX_DELAY = 72000; // 72 seconds maximum delay between transactions
 const ADDRESSES_PER_WALLET = 50; // Number of addresses to generate per wallet
 
-// Initialize Web3 with public Sepolia RPC
-const SEPOLIA_RPCS = [
-    'https://rpc.sepolia.org',
-    'https://rpc2.sepolia.org',
-    'https://eth-sepolia.public.blastapi.io',
-    'https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161'
-];
+// A list of public Sepolia RPCs to try connecting to
+const SEPOLIA_RPCS = ["https://rpc.sepolia.org", "https://rpc2.sepolia.org", "https://eth-sepolia.public.blastapi.io", "https://sepolia.infura.io/v3/9aa3d95b3bc440fa88ea12eaa4456161"];
 
-// Function to get working RPC
+// --- HELPER FUNCTIONS ---
+
+/**
+ * Iterates through the SEPOLIA_RPCS list and returns the first working Web3 instance.
+ * @returns {Promise<Web3>} A Web3 instance connected to a working RPC.
+ * @throws {Error} If no working RPC is found.
+ */
 async function getWorkingRPC() {
-    for (const rpc of SEPOLIA_RPCS) {
-        try {
-            const web3 = new Web3(rpc);
-            const isConnected = await web3.eth.net.isListening();
-            if (isConnected) {
-                console.log(`Connected to Sepolia using RPC: ${rpc}`);
-                return web3;
-            }
-        } catch (error) {
-            continue;
-        }
+  console.log("Searching for a working Sepolia RPC...");
+  for (const rpc of SEPOLIA_RPCS) {
+    try {
+      const tempWeb3 = new Web3(rpc);
+      // Check if the node is actively listening for connections
+      const isConnected = await tempWeb3.eth.net.isListening();
+      if (isConnected) {
+        console.log(`Successfully connected to Sepolia using RPC: ${rpc}`);
+        return tempWeb3;
+      }
+    } catch (error) {
+      console.warn(`Failed to connect to RPC: ${rpc}. Trying next...`);
+      continue;
     }
-    throw new Error('No working RPC found');
+  }
+  throw new Error("Could not find any working Sepolia RPCs.");
 }
 
-// Function to generate random Ethereum address
+/**
+ * Generates a single random Ethereum address.
+ * @returns {string} A new Ethereum address.
+ */
 function generateRandomAddress() {
-    const account = web3.eth.accounts.create();
-    return account.address;
+  // web3.eth.accounts.create() doesn't require a provider, so it's safe to use here.
+  const account = web3.eth.accounts.create();
+  return account.address;
 }
 
-// Generate random addresses
+/**
+ * Generates a specified number of random Ethereum addresses.
+ * @param {number} count - The number of addresses to generate.
+ * @returns {string[]} An array of generated Ethereum addresses.
+ */
 function generateAddresses(count = ADDRESSES_PER_WALLET) {
-    const addresses = [];
-    for (let i = 0; i < count; i++) {
-        addresses.push(generateRandomAddress());
-    }
-    return addresses;
+  const addresses = [];
+  for (let i = 0; i < count; i++) {
+    addresses.push(generateRandomAddress());
+  }
+  return addresses;
 }
 
-// Helper function to generate random number between min and max
+/**
+ * Generates a random number within a specified range.
+ * @param {number} min - The minimum value.
+ * @param {number} max - The maximum value.
+ * @returns {number} A random number between min and max.
+ */
 function getRandomNumber(min, max) {
-    return Math.random() * (max - min) + min;
+  return Math.random() * (max - min) + min;
 }
 
-// Helper function to get random amount
+/**
+ * Generates a random ETH amount and formats it to avoid precision issues.
+ * @returns {number} A random ETH amount.
+ */
 function getRandomAmount() {
-    return getRandomNumber(MIN_AMOUNT, MAX_AMOUNT);
+  const amount = getRandomNumber(MIN_AMOUNT, MAX_AMOUNT);
+  // FIX: Limit the number of decimal places to avoid "too many decimal places" error from web3.
+  // Numbers with too many decimals cannot be converted to 'wei' correctly.
+  return parseFloat(amount.toFixed(8));
 }
 
-// Helper function to get random delay
+/**
+ * Generates a random delay in milliseconds.
+ * @param {number} min - The minimum delay in ms.
+ * @param {number} max - The maximum delay in ms.
+ * @returns {number} A random integer representing the delay in milliseconds.
+ */
 function getRandomDelay(min, max) {
-    return Math.floor(getRandomNumber(min, max));
+  return Math.floor(getRandomNumber(min, max));
 }
 
-// Function to send ETH
+// --- CORE LOGIC ---
+
+/**
+ * Sends a specified amount of ETH from one address to another.
+ * @param {string} fromAddress - The sender's Ethereum address.
+ * @param {string} toAddress - The recipient's Ethereum address.
+ * @param {number} amountEth - The amount of ETH to send.
+ * @param {string} privateKey - The sender's private key.
+ * @returns {Promise<object|null>} The transaction receipt if successful, otherwise null.
+ */
 async function sendEth(fromAddress, toAddress, amountEth, privateKey) {
-    try {
-        const amountWei = web3.utils.toWei(amountEth.toString(), 'ether');
-        const nonce = await web3.eth.getTransactionCount(fromAddress);
-        const gasPrice = await web3.eth.getGasPrice();
+  try {
+    const amountWei = web3.utils.toWei(amountEth.toString(), "ether");
+    const nonce = await web3.eth.getTransactionCount(fromAddress, "latest");
+    const gasPrice = await web3.eth.getGasPrice();
 
-        const transaction = {
-            nonce: nonce,
-            to: toAddress,
-            value: amountWei,
-            gas: 21000,
-            gasPrice: gasPrice,
-            chainId: 11155111 // Sepolia chain ID
-        };
+    const transaction = {
+      nonce: nonce,
+      to: toAddress,
+      value: amountWei,
+      gas: 21000,
+      gasPrice: gasPrice,
+      chainId: 11155111, // Sepolia Chain ID
+    };
 
-        const signedTx = await web3.eth.accounts.signTransaction(transaction, privateKey);
-        const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
+    const signedTx = await web3.eth.accounts.signTransaction(transaction, privateKey);
+    const receipt = await web3.eth.sendSignedTransaction(signedTx.rawTransaction);
 
-        console.log(`Transaction successful! Hash: ${receipt.transactionHash}`);
-        return receipt;
-    } catch (error) {
-        console.log(`Error sending transaction: ${error.message}`);
-        return null;
-    }
+    console.log(`Transaction successful! Hash: ${receipt.transactionHash}`);
+    return receipt;
+  } catch (error) {
+    // Log a more detailed error message for easier debugging.
+    console.error(`Error sending transaction to ${toAddress}: ${error.message}`);
+    return null;
+  }
 }
 
-// Function to send to batch of addresses
+/**
+ * Sends ETH to a batch of addresses with a delay between each transaction.
+ * @param {string[]} addresses - An array of recipient addresses.
+ * @param {string} fromAddress - The sender's address.
+ * @param {string} privateKey - The sender's private key.
+ */
 async function sendToBatch(addresses, fromAddress, privateKey) {
-    console.log(`\nSending to batch of ${addresses.length} addresses...`);
-    
-    for (const address of addresses) {
-        console.log(`\nSending to: ${address}`);
-        const randomAmount = getRandomAmount();
-        console.log(`Amount to send: ${randomAmount} ETH`);
-        await sendEth(fromAddress, address, randomAmount, privateKey);
-        
-        // Random delay between transactions in the same batch
-        const randomDelay = getRandomDelay(MIN_TX_DELAY, MAX_TX_DELAY);
-        console.log(`Waiting ${randomDelay/1000} seconds before next transaction...`);
-        await new Promise(resolve => setTimeout(resolve, randomDelay));
-    }
+  console.log(`\nSending to batch of ${addresses.length} addresses...`);
+
+  for (const address of addresses) {
+    const randomAmount = getRandomAmount();
+    console.log(`\nSending ${randomAmount.toFixed(8)} ETH to: ${address}`); // Display the rounded amount.
+    await sendEth(fromAddress, address, randomAmount, privateKey);
+
+    // Wait for a random delay before the next transaction in the same batch.
+    const randomDelay = getRandomDelay(MIN_TX_DELAY, MAX_TX_DELAY);
+    console.log(`Waiting ${(randomDelay / 1000).toFixed(1)} seconds before next transaction...`);
+    await new Promise((resolve) => setTimeout(resolve, randomDelay));
+  }
 }
 
-// Function to process a single wallet
+/**
+ * Processes a single wallet: generates addresses, splits them into batches, and sends ETH.
+ * @param {string} privateKey - The private key of the wallet to process.
+ * @param {number} walletIndex - The index of the wallet for logging purposes.
+ */
 async function processWallet(privateKey, walletIndex) {
-    try {
-        // Add 0x prefix if not present
-        const formattedPrivateKey = privateKey.startsWith('0x') ? privateKey : '0x' + privateKey;
-        
-        // Get sender address from private key
-        const fromAddress = web3.eth.accounts.privateKeyToAccount(formattedPrivateKey).address;
-        
-        // Check balance
-        const balance = await web3.eth.getBalance(fromAddress);
-        const balanceEth = web3.utils.fromWei(balance, 'ether');
-        console.log(`\nWallet ${walletIndex + 1} - Address: ${fromAddress}`);
-        console.log(`Balance: ${balanceEth} ETH`);
+  try {
+    // Ensure the private key has the '0x' prefix.
+    const formattedPrivateKey = privateKey.startsWith("0x") ? privateKey : "0x" + privateKey;
+    const fromAddress = web3.eth.accounts.privateKeyToAccount(formattedPrivateKey).address;
+    const balance = await web3.eth.getBalance(fromAddress);
+    const balanceEth = web3.utils.fromWei(balance, "ether");
 
-        // Generate addresses for this wallet
-        const addresses = generateAddresses(ADDRESSES_PER_WALLET);
-        console.log(`\nGenerated ${ADDRESSES_PER_WALLET} random Ethereum addresses for wallet ${walletIndex + 1}:`);
-        addresses.forEach((addr, index) => {
-            console.log(`${(index + 1).toString().padStart(2, '0')}. ${addr}`);
-        });
+    console.log(`\nWallet ${walletIndex + 1} - Address: ${fromAddress}`);
+    console.log(`Balance: ${balanceEth} ETH`);
 
-        // Split addresses into batches
-        const batches = [];
-        for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
-            batches.push(addresses.slice(i, i + BATCH_SIZE));
-        }
+    // Generate a new set of random addresses for this wallet.
+    const addresses = generateAddresses(ADDRESSES_PER_WALLET);
+    console.log(`\nGenerated ${ADDRESSES_PER_WALLET} random addresses for wallet ${walletIndex + 1}.`);
 
-        // Send to each batch with delay
-        console.log(`\nStarting batch transactions for wallet ${walletIndex + 1}...`);
-        
-        for (let i = 0; i < batches.length; i++) {
-            console.log(`\nBatch ${i + 1} (${batches[i].length} addresses):`);
-            await sendToBatch(batches[i], fromAddress, formattedPrivateKey);
-            
-            if (i < batches.length - 1) {
-                const randomBatchDelay = getRandomDelay(MIN_BATCH_DELAY, MAX_BATCH_DELAY);
-                console.log(`\nWaiting ${randomBatchDelay/1000} seconds before next batch...`);
-                await new Promise(resolve => setTimeout(resolve, randomBatchDelay));
-            }
-        }
-
-        console.log(`\nAll batches completed for wallet ${walletIndex + 1}!`);
-        
-    } catch (error) {
-        console.error(`Error processing wallet ${walletIndex + 1}:`, error.message);
+    // Split addresses into smaller batches.
+    const batches = [];
+    for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
+      batches.push(addresses.slice(i, i + BATCH_SIZE));
     }
+
+    console.log(`\nStarting batch transactions for wallet ${walletIndex + 1}...`);
+    for (let i = 0; i < batches.length; i++) {
+      console.log(`\n--- Processing Batch ${i + 1} of ${batches.length} ---`);
+      await sendToBatch(batches[i], fromAddress, formattedPrivateKey);
+
+      // If it's not the last batch, wait for a longer delay.
+      if (i < batches.length - 1) {
+        const randomBatchDelay = getRandomDelay(MIN_BATCH_DELAY, MAX_BATCH_DELAY);
+        console.log(`\nBatch complete. Waiting ${(randomBatchDelay / 1000 / 60).toFixed(1)} minutes before next batch...`);
+        await new Promise((resolve) => setTimeout(resolve, randomBatchDelay));
+      }
+    }
+    console.log(`\nAll batches completed for wallet ${walletIndex + 1}!`);
+  } catch (error) {
+    console.error(`An error occurred while processing wallet ${walletIndex + 1}:`, error.message);
+  }
 }
 
+// --- MAIN EXECUTION ---
+
+/**
+ * Main function to orchestrate the entire process.
+ */
 async function main() {
-    try {
-        // Get working RPC
-        web3 = await getWorkingRPC();
-        
-        // Get all private keys from .env
-        const privateKeys = [];
-        let index = 1;
-        let hasMoreKeys = true;
+  try {
+    // 1. Find a working RPC and initialize web3.
+    web3 = await getWorkingRPC();
 
-        while (hasMoreKeys) {
-            const key = process.env[`PRIVATE_KEY_${index}`];
-            if (!key) {
-                hasMoreKeys = false;
-            } else {
-                const trimmedKey = key.trim();
-                if (trimmedKey && trimmedKey !== 'your_private_key_here') {
-                    privateKeys.push(trimmedKey);
-                }
-                index++;
-            }
-        }
-        
-        if (privateKeys.length === 0) {
-            console.error("Error: No valid private keys found in .env file");
-            console.log("\nPlease create a .env file with at least one private key:");
-            console.log("PRIVATE_KEY_1=your_private_key_here");
-            console.log("PRIVATE_KEY_2=your_private_key_here (optional)");
-            console.log("PRIVATE_KEY_3=your_private_key_here (optional)");
-            console.log("... and so on");
-            return;
-        }
+    // 2. Read all private keys from the .env file.
+    const privateKeys = [];
+    let index = 1;
+    while (true) {
+      const key = process.env[`PRIVATE_KEY_${index}`];
+      if (!key) break; // Exit loop if no more keys are found.
 
-        console.log(`\nFound ${privateKeys.length} valid wallet(s) to process`);
-        console.log("Script will process all available wallets in sequence");
-
-        // Process each wallet
-        for (let i = 0; i < privateKeys.length; i++) {
-            console.log(`\n=== Processing Wallet ${i + 1} of ${privateKeys.length} ===`);
-            await processWallet(privateKeys[i], i);
-            
-            if (i < privateKeys.length - 1) {
-                console.log(`\nWaiting 5 minutes before processing next wallet...`);
-                await new Promise(resolve => setTimeout(resolve, 300000)); // 5 minutes delay between wallets
-            }
-        }
-
-        console.log("\nAll available wallets processed successfully!");
-        
-    } catch (error) {
-        console.error("Error:", error.message);
+      const trimmedKey = key.trim();
+      if (trimmedKey && trimmedKey.toLowerCase() !== "your_private_key_here") {
+        privateKeys.push(trimmedKey);
+      }
+      index++;
     }
+
+    if (privateKeys.length === 0) {
+      console.error("Error: No valid private keys found in your .env file.");
+      console.log("\nPlease create a .env file and add your keys like this:");
+      console.log("PRIVATE_KEY_1=your_private_key_here");
+      console.log("PRIVATE_KEY_2=your_other_private_key_here (optional)");
+      return;
+    }
+
+    console.log(`\nFound ${privateKeys.length} wallet(s) to process.`);
+    console.log("The script will process each wallet sequentially.");
+
+    // 3. Process each wallet one by one.
+    for (let i = 0; i < privateKeys.length; i++) {
+      console.log(`\n================== Processing Wallet ${i + 1} of ${privateKeys.length} ==================`);
+      await processWallet(privateKeys[i], i);
+
+      // Wait before starting the next wallet, if there is one.
+      if (i < privateKeys.length - 1) {
+        const delayBetweenWallets = 300000; // 5 minutes
+        console.log(`\nFinished wallet. Waiting 5 minutes before processing the next one...`);
+        await new Promise((resolve) => setTimeout(resolve, delayBetweenWallets));
+      }
+    }
+
+    console.log("\n================== All Wallets Processed! ==================");
+  } catch (error) {
+    console.error("\nA critical error occurred in the main process:", error.message);
+  }
 }
 
-main().catch(console.error); 
+// Run the script
+main().catch((error) => {
+  // This catches any unhandled promise rejections from main()
+  console.error("Script execution failed:", error);
+});
